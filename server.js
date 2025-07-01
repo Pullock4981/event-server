@@ -9,10 +9,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({
-    origin: 'http://localhost:5173',
-    credentials: true
-}));
+app.use(cors({ origin: '*' }));
 
 // JWT Setup
 const maxAge = 3 * 24 * 60 * 60; // 3 days
@@ -23,12 +20,15 @@ const createToken = (id) =>
 const client = new MongoClient(process.env.MONGO_URI);
 let usersCollection;
 let eventsCollection;
+let groupsCollection;
 
+// Connect to DB
 async function connectDB() {
     await client.connect();
     const db = client.db('eventApp');
     usersCollection = db.collection('users');
     eventsCollection = db.collection('events');
+    groupsCollection = db.collection('groups');
     console.log('Connected to MongoDB');
 }
 connectDB().catch(console.error);
@@ -48,12 +48,12 @@ function requireAuth(req, res, next) {
     }
 }
 
-// ==== Auth Routes ====
-
+// ===== Base Route =====
 app.get("/", (req, res) => {
-    res.json({ status: 200 });
+    res.json({ status: 200, message: 'Hobby Hub API is running!' });
 });
 
+// ===== Auth Routes =====
 app.post('/api/auth/register', async (req, res) => {
     const { name, email, password, photoURL } = req.body;
     if (!name || !email || !password || !photoURL) {
@@ -114,8 +114,7 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     }
 });
 
-// ==== Event Routes ====
-
+// ===== Event Routes =====
 app.get('/api/events', async (req, res) => {
     try {
         const events = await eventsCollection.find().toArray();
@@ -164,7 +163,6 @@ app.delete('/api/events/:id', requireAuth, async (req, res) => {
         const result = await eventsCollection.deleteOne({ _id: new ObjectId(id) });
         res.status(200).json({ message: 'Event deleted' });
     } catch (err) {
-        console.error('Delete error:', err);
         res.status(500).json({ error: 'Failed to delete event' });
     }
 });
@@ -188,7 +186,63 @@ app.patch('/api/events/:id', requireAuth, async (req, res) => {
     }
 });
 
-// ==== Start Server ====
+// ===== Group Routes =====
+app.get('/groups', async (req, res) => {
+    const { creatorEmail } = req.query;
+    const query = creatorEmail ? { userEmail: creatorEmail } : {};
+    try {
+        const groups = await groupsCollection.find(query).toArray();
+        res.send(groups);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch groups' });
+    }
+});
 
+app.get('/groups/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const group = await groupsCollection.findOne({ _id: new ObjectId(id) });
+        res.send(group);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch group' });
+    }
+});
+
+app.post('/groups', async (req, res) => {
+    try {
+        const newGroup = req.body;
+        const result = await groupsCollection.insertOne(newGroup);
+        res.send(result);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create group' });
+    }
+});
+
+app.put('/groups/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const updateData = req.body;
+        const result = await groupsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updateData },
+            { upsert: true }
+        );
+        res.send(result);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update group' });
+    }
+});
+
+app.delete('/groups/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const result = await groupsCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send(result);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete group' });
+    }
+});
+
+// ==== Start Server ====
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
